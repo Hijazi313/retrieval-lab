@@ -14,6 +14,7 @@ These are the main system constraints we should revisit as the project grows:
 - Vector search is useful for concept matching, but it can miss exact keyword intent, rare identifiers, and precise error codes.
 - Retrieval currently returns relevant chunks, not final answers. There is no answer synthesis layer yet.
 - There is no reranking step yet, so the top vector hits are not re-scored for true usefulness.
+- Hybrid fusion is now tunable, but we still need a small evaluation set before we can say whether weighted scoring or RRF works better for this corpus.
 - Ingest generates embeddings immediately, which is simple but not ideal for large batch workloads.
 - Re-ingesting the same document can still create duplicate document rows unless we add deterministic document identity.
 - Similarity scores are only relative signals. They do not guarantee that the top result is actually the best answer.
@@ -56,3 +57,32 @@ pnpm start:dev
 ```
 
 The API uses the `/api` global prefix.
+
+## Chunking Strategies
+
+### Recursive Chunking
+
+#### Problem
+
+Default character count is
+
+### Approach
+
+Markdown Section First, Then Recursive Split.
+
+#### Required behavior:
+
+1. Detect markdown-like documents.
+2. Split first by markdown headings, especially ## and ###.
+3. Preserve the heading with its section content.
+4. Do not merge chunks across different markdown sections.
+5. If a section is larger than chunkSize, recursively split inside that section only.
+6. Apply overlap only inside the same section.
+7. Overlap must be boundary-aware: paragraph > sentence > line > word.
+8. Never start a chunk from the middle of a word.
+9. Add metadata:
+   - sectionTitle
+   - sectionLevel
+   - chunkIndex
+   - chunkSize
+   - chunkOverlap

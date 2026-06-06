@@ -1,0 +1,8 @@
+- Prefer solutions that are best, simple, and scalable for this project as of June 2026.
+- When a safe, maintained, industry-standard package solves the problem well, prefer it over custom business logic.
+- Verify current library/package recommendations when the choice may have changed recently.
+- Avoid unnecessary dependency sprawl; use project primitives when they already solve the problem cleanly.
+- Do not add tests unless explicitly asked.
+- Avoid broad `pnpm build` / `pnpm test` for small scoped changes unless risk requires it.
+- Add useful comments/docs when introducing classes, methods, or architectural boundaries.
+- Preserve the learning-project nature: make changes clean, explainable, and easy to compare.

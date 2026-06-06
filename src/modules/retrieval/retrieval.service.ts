@@ -17,8 +17,10 @@ import { VectorSearchDto } from './dto/vector-search.dto';
 
 const DEFAULT_TOP_K = 5;
 const MAX_TOP_K = 50;
-const VECTOR_WEIGHT = 0.7;
-const KEYWORD_WEIGHT = 0.3;
+const DEFAULT_VECTOR_WEIGHT = 0.7;
+const DEFAULT_KEYWORD_WEIGHT = 0.3;
+const DEFAULT_HYBRID_FUSION_STRATEGY = 'weighted_sum';
+const DEFAULT_RRF_K = 60;
 
 type VectorSearchResult = {
   chunkId: string;
@@ -37,11 +39,24 @@ type HybridSearchResult = {
   content: string;
   vectorScore: number;
   keywordScore: number;
+  vectorRank: number | null;
+  keywordRank: number | null;
   normalizedVectorScore: number;
   normalizedKeywordScore: number;
   hybridScore: number;
   matchedBy: Array<'vector' | 'keyword'>;
 };
+
+type HybridFusionConfig =
+  | {
+      strategy: 'weighted_sum';
+      vectorWeight: number;
+      keywordWeight: number;
+    }
+  | {
+      strategy: 'rrf';
+      rrfK: number;
+    };
 
 /**
  * Coordinates retrieval workflows and records retrieval runs for later evaluation.
@@ -118,6 +133,7 @@ export class RetrievalService {
     const query = dto.query.trim();
     const topK = dto.topK ?? DEFAULT_TOP_K;
     const candidateLimit = Math.min(topK * 2, MAX_TOP_K);
+    const fusion = this.resolveHybridFusionConfig(dto);
     const [vectorResults, keywordResults] = await Promise.all([
       this.findVectorResults(query, candidateLimit),
       this.findKeywordResults(query, candidateLimit),
@@ -126,25 +142,26 @@ export class RetrievalService {
       vectorResults,
       keywordResults,
       topK,
+      fusion,
     });
 
     await this.recordHybridRun({
       query,
       topK,
+      fusion,
       results,
     });
 
     return {
       query,
-      weights: {
-        vector: VECTOR_WEIGHT,
-        keyword: KEYWORD_WEIGHT,
-      },
+      fusion,
       results: results.map((result) => ({
         chunkId: result.chunkId,
         content: result.content,
         vectorScore: result.vectorScore,
         keywordScore: result.keywordScore,
+        vectorRank: result.vectorRank,
+        keywordRank: result.keywordRank,
         hybridScore: result.hybridScore,
         matchedBy: result.matchedBy,
       })),
@@ -211,12 +228,13 @@ export class RetrievalService {
   }
 
   /**
-   * Normalizes each result family, then combines them with simple weighted scoring.
+   * Builds one candidate pool, then lets the selected fusion strategy score it.
    */
   private mergeHybridResults(input: {
     vectorResults: VectorSearchResult[];
     keywordResults: KeywordSearchResult[];
     topK: number;
+    fusion: HybridFusionConfig;
   }): HybridSearchResult[] {
     const normalizedVectorScores = this.normalizeScores(
       input.vectorResults.map((result) => result.similarity),
@@ -232,9 +250,11 @@ export class RetrievalService {
         content: result.content,
         vectorScore: result.similarity,
         keywordScore: 0,
+        vectorRank: index + 1,
+        keywordRank: null,
         normalizedVectorScore: normalizedVectorScores[index],
         normalizedKeywordScore: 0,
-        hybridScore: VECTOR_WEIGHT * normalizedVectorScores[index],
+        hybridScore: 0,
         matchedBy: ['vector'],
       });
     });
@@ -249,25 +269,71 @@ export class RetrievalService {
           content: result.content,
           vectorScore: 0,
           keywordScore: result.rank,
+          vectorRank: null,
+          keywordRank: index + 1,
           normalizedVectorScore: 0,
           normalizedKeywordScore,
-          hybridScore: KEYWORD_WEIGHT * normalizedKeywordScore,
+          hybridScore: 0,
           matchedBy: ['keyword'],
         });
         return;
       }
 
       existing.keywordScore = result.rank;
+      existing.keywordRank = index + 1;
       existing.normalizedKeywordScore = normalizedKeywordScore;
-      existing.hybridScore =
-        VECTOR_WEIGHT * existing.normalizedVectorScore +
-        KEYWORD_WEIGHT * normalizedKeywordScore;
       existing.matchedBy.push('keyword');
     });
 
     return Array.from(merged.values())
+      .map((result) => ({
+        ...result,
+        hybridScore: this.calculateHybridScore(result, input.fusion),
+      }))
       .sort((a, b) => b.hybridScore - a.hybridScore)
       .slice(0, input.topK);
+  }
+
+  /**
+   * Keeps hybrid fusion tunable without changing the vector/keyword retrieval code.
+   */
+  private calculateHybridScore(
+    result: HybridSearchResult,
+    fusion: HybridFusionConfig,
+  ): number {
+    if (fusion.strategy === 'weighted_sum') {
+      return (
+        fusion.vectorWeight * result.normalizedVectorScore +
+        fusion.keywordWeight * result.normalizedKeywordScore
+      );
+    }
+
+    const vectorContribution =
+      result.vectorRank === null ? 0 : 1 / (fusion.rrfK + result.vectorRank);
+    const keywordContribution =
+      result.keywordRank === null ? 0 : 1 / (fusion.rrfK + result.keywordRank);
+
+    return vectorContribution + keywordContribution;
+  }
+
+  /**
+   * Resolves per-request fusion settings so hybrid experiments stay explicit.
+   */
+  private resolveHybridFusionConfig(dto: HybridSearchDto): HybridFusionConfig {
+    const strategy = dto.fusionStrategy ?? DEFAULT_HYBRID_FUSION_STRATEGY;
+
+    if (strategy === 'rrf') {
+      return {
+        strategy,
+        rrfK: dto.rrfK ?? DEFAULT_RRF_K,
+      };
+    }
+
+    return {
+      strategy,
+      vectorWeight: dto.vectorWeight ?? DEFAULT_VECTOR_WEIGHT,
+      keywordWeight: dto.keywordWeight ?? DEFAULT_KEYWORD_WEIGHT,
+    };
   }
 
   /**
@@ -370,6 +436,7 @@ export class RetrievalService {
   private async recordHybridRun(input: {
     query: string;
     topK: number;
+    fusion: HybridFusionConfig;
     results: HybridSearchResult[];
   }) {
     await this.db.transaction(async (tx) => {
@@ -379,12 +446,7 @@ export class RetrievalService {
           query: input.query,
           strategy: 'hybrid',
           topK: input.topK,
-          parameters: {
-            vectorWeight: VECTOR_WEIGHT,
-            keywordWeight: KEYWORD_WEIGHT,
-            fusion: 'weighted_sum',
-            scoreNormalization: 'min_max_per_result_family',
-          },
+          parameters: this.buildHybridRunParameters(input.fusion),
         })
         .returning({ id: retrievalRuns.id });
 
@@ -404,6 +466,28 @@ export class RetrievalService {
         })),
       );
     });
+  }
+
+  /**
+   * Persists enough metadata to explain how a hybrid run was ranked later.
+   */
+  private buildHybridRunParameters(
+    fusion: HybridFusionConfig,
+  ): Record<string, unknown> {
+    if (fusion.strategy === 'rrf') {
+      return {
+        fusion: fusion.strategy,
+        rrfK: fusion.rrfK,
+        scoreNormalization: 'not_used_rank_based',
+      };
+    }
+
+    return {
+      fusion: fusion.strategy,
+      vectorWeight: fusion.vectorWeight,
+      keywordWeight: fusion.keywordWeight,
+      scoreNormalization: 'min_max_per_result_family',
+    };
   }
 
   /**
@@ -432,6 +516,70 @@ export class RetrievalService {
         `topK cannot be greater than ${MAX_TOP_K}.`,
       );
     }
+
+    if (!this.isHybridSearchDto(dto)) {
+      return;
+    }
+
+    if (
+      dto.fusionStrategy !== undefined &&
+      dto.fusionStrategy !== 'weighted_sum' &&
+      dto.fusionStrategy !== 'rrf'
+    ) {
+      throw new BadRequestException(
+        'fusionStrategy must be either weighted_sum or rrf.',
+      );
+    }
+
+    if (
+      dto.vectorWeight !== undefined &&
+      (!Number.isFinite(dto.vectorWeight) || dto.vectorWeight < 0)
+    ) {
+      throw new BadRequestException(
+        'vectorWeight must be a finite number greater than or equal to 0.',
+      );
+    }
+
+    if (
+      dto.keywordWeight !== undefined &&
+      (!Number.isFinite(dto.keywordWeight) || dto.keywordWeight < 0)
+    ) {
+      throw new BadRequestException(
+        'keywordWeight must be a finite number greater than or equal to 0.',
+      );
+    }
+
+    if (
+      (dto.fusionStrategy ?? DEFAULT_HYBRID_FUSION_STRATEGY) ===
+        'weighted_sum' &&
+      (dto.vectorWeight ?? DEFAULT_VECTOR_WEIGHT) === 0 &&
+      (dto.keywordWeight ?? DEFAULT_KEYWORD_WEIGHT) === 0
+    ) {
+      throw new BadRequestException(
+        'vectorWeight and keywordWeight cannot both be 0.',
+      );
+    }
+
+    if (
+      dto.rrfK !== undefined &&
+      (!Number.isInteger(dto.rrfK) || dto.rrfK <= 0)
+    ) {
+      throw new BadRequestException('rrfK must be a positive integer.');
+    }
+  }
+
+  /**
+   * Narrows search input when validating hybrid-only tuning fields.
+   */
+  private isHybridSearchDto(
+    dto: VectorSearchDto | KeywordSearchDto | HybridSearchDto,
+  ): dto is HybridSearchDto {
+    return (
+      'fusionStrategy' in dto ||
+      'vectorWeight' in dto ||
+      'keywordWeight' in dto ||
+      'rrfK' in dto
+    );
   }
 
   /**
