@@ -1,4 +1,5 @@
 import {
+  customType,
   index,
   integer,
   jsonb,
@@ -7,6 +8,13 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return 'tsvector';
+  },
+});
 
 export const documents = pgTable(
   'documents',
@@ -34,6 +42,9 @@ export const chunks = pgTable(
     chunkIndex: integer('chunk_index').notNull(),
     chunkStrategy: text('chunk_strategy').notNull(),
     content: text('content').notNull(),
+    searchVector: tsvector('search_vector')
+      .generatedAlwaysAs(() => sql`to_tsvector('english', content)`)
+      .notNull(),
     tokenCount: integer('token_count'),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
     createdAt: timestamp('created_at').notNull().defaultNow(),

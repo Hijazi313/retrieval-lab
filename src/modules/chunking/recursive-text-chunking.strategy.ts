@@ -9,7 +9,15 @@ import {
 
 const DEFAULT_CHUNK_SIZE = 1_000;
 const DEFAULT_CHUNK_OVERLAP = 150;
-const SEPARATORS = ['\n\n', '\n', '. ', ' ', ''];
+const SEPARATORS = [
+  '\n\n---\n\n',
+  '\n\n## ',
+  '\n\n### ',
+  '\n\n',
+  '. ',
+  '\n',
+  ' ',
+];
 
 /**
  * Splits text by progressively smaller separators before falling back to characters.
@@ -48,7 +56,7 @@ export class RecursiveTextChunkingStrategy implements ChunkingStrategy {
   }
 
   /**
-   * Attempts paragraph, line, sentence, and word boundaries before character slicing.
+   * Attempts structural document boundaries first, then sentences, lines, and words.
    */
   private splitRecursively(
     text: string,

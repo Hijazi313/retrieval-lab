@@ -15,6 +15,13 @@
       "when": 1780739662000,
       "tag": "0001_chunk_embeddings_hnsw",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780740000000,
+      "tag": "0002_chunks_full_text_search",
+      "breakpoints": true
     }
   ]
 }
