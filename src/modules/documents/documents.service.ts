@@ -11,6 +11,7 @@ import type { Database } from '../../database/database.types';
 import { chunks, documents } from '../../database/schema';
 import { ChunkingService } from '../chunking/chunking.service';
 import { createDeterministicChunkId } from '../chunking/chunk-id.util';
+import { EmbeddingsService } from '../embeddings/embeddings.service';
 import { IngestDocumentDto } from './dto/ingest-document.dto';
 
 const DEFAULT_CHUNKING_STRATEGY = 'recursive';
@@ -23,6 +24,7 @@ export class DocumentsService {
   constructor(
     @Inject(DATABASE) private readonly db: Database,
     private readonly chunkingService: ChunkingService,
+    private readonly embeddingsService: EmbeddingsService,
   ) {}
 
   /**
@@ -82,11 +84,26 @@ export class DocumentsService {
               tokenCount: chunks.tokenCount,
             });
 
+      const embeddedChunks =
+        chunkValues.length === 0
+          ? []
+          : await this.embeddingsService.generateChunkEmbeddings(
+              chunkValues.map((chunk) => ({
+                id: chunk.id,
+                content: chunk.content,
+              })),
+              tx,
+            );
+
       return {
         document,
         chunking: {
           strategy: chunkStrategy,
           chunksCreated: insertedChunks.length,
+        },
+        embeddings: {
+          model: embeddedChunks[0]?.model ?? null,
+          chunksEmbedded: embeddedChunks.length,
         },
         chunks: insertedChunks,
       };
