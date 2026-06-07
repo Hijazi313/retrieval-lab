@@ -34,6 +34,7 @@ export class ChunkingService {
    */
   splitText(input: {
     text: string;
+    sourceType?: string;
     strategy: string;
     options?: ChunkingOptions;
   }): ChunkingResult[] {
@@ -45,6 +46,9 @@ export class ChunkingService {
       );
     }
 
-    return strategy.split({ text: input.text }, input.options);
+    return strategy.split(
+      { text: input.text, sourceType: input.sourceType },
+      input.options,
+    );
   }
 }

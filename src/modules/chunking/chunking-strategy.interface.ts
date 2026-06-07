@@ -3,6 +3,7 @@
  */
 export interface ChunkingInput {
   text: string;
+  sourceType?: string;
 }
 
 /**

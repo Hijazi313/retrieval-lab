@@ -37,6 +37,7 @@ export class DocumentsService {
     const normalizedContent = this.chunkingService.normalize(dto.content);
     const chunkResults = this.chunkingService.splitText({
       text: normalizedContent,
+      sourceType: dto.sourceType,
       strategy: chunkStrategy,
       options: {
         chunkSize: dto.chunking?.chunkSize,
@@ -72,7 +73,11 @@ export class DocumentsService {
         chunkStrategy,
         content: chunk.content,
         tokenCount: chunk.tokenCount,
-        metadata: chunk.metadata,
+        metadata: {
+          ...chunk.metadata,
+          chunkIndex: chunk.chunkIndex,
+          documentId: document.id,
+        },
       }));
 
       const insertedChunks =
