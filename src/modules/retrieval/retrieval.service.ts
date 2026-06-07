@@ -81,14 +81,14 @@ export class RetrievalService {
     const query = dto.query.trim();
     const topK = dto.topK ?? DEFAULT_TOP_K;
     const results = await this.findVectorResults(query, topK);
-
-    await this.recordVectorRun({
+    const runId = await this.recordVectorRun({
       query,
       topK,
       results,
     });
 
     return {
+      runId,
       query,
       results: results.map((result) => ({
         chunkId: result.chunkId,
@@ -107,14 +107,14 @@ export class RetrievalService {
     const query = dto.query.trim();
     const topK = dto.topK ?? DEFAULT_TOP_K;
     const results = await this.findKeywordResults(query, topK);
-
-    await this.recordKeywordRun({
+    const runId = await this.recordKeywordRun({
       query,
       topK,
       results,
     });
 
     return {
+      runId,
       query,
       results: results.map((result) => ({
         chunkId: result.chunkId,
@@ -144,8 +144,7 @@ export class RetrievalService {
       topK,
       fusion,
     });
-
-    await this.recordHybridRun({
+    const runId = await this.recordHybridRun({
       query,
       topK,
       fusion,
@@ -153,6 +152,7 @@ export class RetrievalService {
     });
 
     return {
+      runId,
       query,
       fusion,
       results: results.map((result) => ({
@@ -362,7 +362,7 @@ export class RetrievalService {
     topK: number;
     results: Array<{ chunkId: string; similarity: number }>;
   }) {
-    await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       const [run] = await tx
         .insert(retrievalRuns)
         .values({
@@ -376,7 +376,7 @@ export class RetrievalService {
         .returning({ id: retrievalRuns.id });
 
       if (input.results.length === 0) {
-        return;
+        return run.id;
       }
 
       await tx.insert(retrievalResults).values(
@@ -388,6 +388,8 @@ export class RetrievalService {
           vectorScore: result.similarity,
         })),
       );
+
+      return run.id;
     });
   }
 
@@ -399,7 +401,7 @@ export class RetrievalService {
     topK: number;
     results: Array<{ chunkId: string; rank: number }>;
   }) {
-    await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       const [run] = await tx
         .insert(retrievalRuns)
         .values({
@@ -415,7 +417,7 @@ export class RetrievalService {
         .returning({ id: retrievalRuns.id });
 
       if (input.results.length === 0) {
-        return;
+        return run.id;
       }
 
       await tx.insert(retrievalResults).values(
@@ -427,6 +429,8 @@ export class RetrievalService {
           fullTextScore: result.rank,
         })),
       );
+
+      return run.id;
     });
   }
 
@@ -439,7 +443,7 @@ export class RetrievalService {
     fusion: HybridFusionConfig;
     results: HybridSearchResult[];
   }) {
-    await this.db.transaction(async (tx) => {
+    return this.db.transaction(async (tx) => {
       const [run] = await tx
         .insert(retrievalRuns)
         .values({
@@ -451,7 +455,7 @@ export class RetrievalService {
         .returning({ id: retrievalRuns.id });
 
       if (input.results.length === 0) {
-        return;
+        return run.id;
       }
 
       await tx.insert(retrievalResults).values(
@@ -465,6 +469,8 @@ export class RetrievalService {
           hybridScore: result.hybridScore,
         })),
       );
+
+      return run.id;
     });
   }
 

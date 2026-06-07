@@ -54,3 +54,18 @@ export const retrievalResults = pgTable(
     index('retrieval_results_run_rank_idx').on(table.runId, table.rank),
   ],
 );
+
+export const retrievalEvaluations = pgTable(
+  'retrieval_evaluations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    retrievalRunId: uuid('retrieval_run_id')
+      .notNull()
+      .references(() => retrievalRuns.id, { onDelete: 'cascade' }),
+    criticModel: text('critic_model').notNull(),
+    criticScore: doublePrecision('critic_score').notNull(),
+    criticReason: text('critic_reason').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [index('retrieval_evaluations_run_idx').on(table.retrievalRunId)],
+);

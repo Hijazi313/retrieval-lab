@@ -6,6 +6,7 @@ import { AppService } from './app.service';
 import { validateEnv } from './config/env.schema';
 import { DatabaseModule } from './database/database.module';
 import { ChunkingModule } from './modules/chunking/chunking.module';
+import { CriticModule } from './modules/critic/critic.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { EmbeddingsModule } from './modules/embeddings/embeddings.module';
 import { EvaluationModule } from './modules/evaluation/evaluation.module';
@@ -25,6 +26,7 @@ import { QueueModule } from './queue/queue.module';
     OpenAiModule,
     DocumentsModule,
     ChunkingModule,
+    CriticModule,
     EmbeddingsModule,
     RetrievalModule,
     EvaluationModule,
