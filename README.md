@@ -40,7 +40,7 @@ The app is organized around small module boundaries:
 - `src/modules/embeddings`: OpenAI embedding generation and vector persistence.
 - `src/modules/retrieval`: vector, full-text, and hybrid search.
 - `src/modules/critic`: LLM-based usefulness judgment for retrieved chunks.
-- `src/modules/evaluation`: placeholder for future evaluation workflows.
+- `src/modules/evaluation`: golden evaluation questions for repeatable retrieval checks.
 - `src/modules/runs`: placeholder for future retrieval run comparison.
 - `src/database`: Drizzle database connection and schema definitions.
 - `src/openai`: OpenAI client provider.
@@ -51,7 +51,7 @@ The main design principle is to keep retrieval, criticism, and evaluation separa
 
 - Retrieval finds and records chunks.
 - The critic judges whether retrieved chunks are useful for a query.
-- Evaluation will later orchestrate broader benchmark and comparison workflows.
+- Evaluation stores curated questions that later benchmark and comparison workflows can run against retrieval.
 
 ## Data Model
 
@@ -63,6 +63,8 @@ Core tables:
 - `retrieval_runs`: stores each search request, strategy, topK, and parameters.
 - `retrieval_results`: stores ranked chunks returned by a retrieval run.
 - `retrieval_evaluations`: stores run-level critic judgments.
+- `eval_questions`: stores golden-dataset questions, categories, expected chunk ids, expected answer keywords, and dataset notes.
+- `eval_question_expected_chunks`: stores curated question-to-chunk answer keys selected from retrieval runs.
 
 Chunk rows have deterministic IDs based on document id, strategy, chunk index, and content. Re-ingesting the same content still creates a new document row, but chunks inside that document are deterministic.
 
@@ -141,6 +143,17 @@ Critic:
 
 - `POST /api/critic/score`
 - `POST /api/critic/retrieval-runs/:runId`
+
+Evaluation:
+
+- `GET /api/evaluation/questions`
+- `POST /api/evaluation/questions`
+- `GET /api/evaluation/questions/:questionId/candidates/from-run/:runId`
+- `POST /api/evaluation/questions/:questionId/expected-chunks/from-run/:runId`
+- `GET /api/evaluation/questions/:questionId/expected-chunks`
+- `POST /api/evaluation/runs`
+- `GET /api/evaluation/runs`
+- `GET /api/evaluation/runs/:runId`
 
 ## Document Ingestion
 
@@ -231,6 +244,71 @@ The critic can be used in two ways:
 
 Critic output is stored in `retrieval_evaluations` at the retrieval-run level.
 
+## Evaluation Dataset
+
+The evaluation module starts the move from "looks good" retrieval checks to repeatable golden-dataset checks.
+
+`eval_questions` stores curated questions with:
+
+- `question`: the user-facing retrieval query.
+- `category`: one of `factual`, `multi-hop`, `ambiguous`, `keyword-heavy`, `semantic`, or `trick/no-answer`.
+- `expectedChunkIds`: a convenience snapshot of chunk ids that should be retrieved for the question.
+- `expectedAnswerKeywords`: lightweight answer clues for later answer-quality checks.
+- `difficulty`: optional human-readable difficulty label.
+- `notes`: curation context so future changes remain explainable.
+- `isActive`: allows retiring a question without deleting historical context.
+
+`eval_question_expected_chunks` stores the curated answer key for a question:
+
+- `evalQuestionId`: the golden question being labeled.
+- `chunkId`: the chunk that should count as relevant for retrieval metrics.
+- `sourceRunId`: the retrieval run where the chunk was selected.
+- `relevanceLabel`: a small label such as `relevant`, `required`, or `supporting`.
+- `rankInSourceRun`: the chunk's rank when it was selected from a run.
+- `notes`: optional curation context.
+
+`eval_runs` and `eval_run_results` store repeatable retrieval benchmark output:
+
+- `eval_runs`: one benchmark execution for a retrieval strategy and `topK`.
+- `eval_run_results`: per-question expected chunks, retrieved chunks, matched chunks, Recall@K, Precision@K, and reciprocal rank.
+
+The initial migration seeds 20 starter questions across the supported categories using the local PostgreSQL knowledge-base documents. Their `expectedChunkIds` arrays intentionally start empty because chunk ids only exist after the knowledge-base files are ingested into a local database. After ingestion, selected retrieved chunks should be promoted into `eval_question_expected_chunks`; the question's `expectedChunkIds` snapshot is then synced from that curated answer key.
+
+The expected chunk workflow is intentionally simple:
+
+1. Run an existing search endpoint and keep the returned `runId`.
+2. Inspect candidates with `GET /api/evaluation/questions/:questionId/candidates/from-run/:runId`.
+3. Promote selected chunks with `POST /api/evaluation/questions/:questionId/expected-chunks/from-run/:runId`.
+4. Review the answer key with `GET /api/evaluation/questions/:questionId/expected-chunks`.
+
+After at least one question has curated expected chunks, run an evaluation:
+
+```json
+{
+  "strategy": "hybrid",
+  "topK": 5
+}
+```
+
+`POST /api/evaluation/runs` runs active curated questions through `vector`, `keyword`, `full_text`, or `hybrid` retrieval. It compares retrieved chunk ids to curated expected chunk ids and stores Recall@K, Precision@K, and reciprocal rank. Active questions without curated expected chunks are skipped and counted in the eval run summary.
+
+For CI or local regression checks, use:
+
+```bash
+pnpm eval:retrieval --strategy hybrid --topK 5 --minRecall 0.7 --minMrr 0.6
+```
+
+The script runs the same evaluation service used by the API, prints a compact report, and exits with code `1` when configured thresholds are not met.
+
+Production-grade evaluation patterns used here:
+
+- Keep curated expected chunks separate from retrieval implementation.
+- Store every benchmark run and per-question result for auditability.
+- Use deterministic retrieval metrics before adding subjective LLM judging.
+- Report skipped uncurated questions instead of silently treating them as failures or successes.
+- Make CI gates threshold-based and explicit.
+- Keep hybrid tuning parameters attached to the eval run so results remain explainable.
+
 ## Knowledge Base
 
 The repository includes small markdown documents under `knowledge-base/` for local retrieval experiments.
@@ -246,8 +324,9 @@ Current topics include PostgreSQL indexing, JSONB, transactions, and vacuum beha
 - Re-ingesting the same document can create duplicate document rows.
 - Retrieval returns chunks, not synthesized answers.
 - There is no reranking step yet.
-- Evaluation workflows and run comparison are placeholders.
-- The project does not include a golden dataset yet.
+- The project includes a starter golden-question dataset, but expected chunk ids still need to be curated from an ingested baseline corpus.
+- Evaluation metric calculation exists for curated retrieval questions, but no-answer scoring and run comparison reports are not implemented yet.
+- CI threshold checks are available, but scheduled/nightly evals and baseline-delta comparisons are not implemented yet.
 
 ## Roadmap
 
@@ -256,6 +335,9 @@ Near-term:
 - Add semantic chunking as a separate strategy behind the chunking boundary.
 - Add a strategy registry so chunking does not grow conditional selection logic.
 - Compare recursive and semantic chunking using retrieval runs and critic scores.
+- Populate golden-question expected chunk ids after ingesting the local knowledge-base corpus.
+- Add no-answer scoring for `trick/no-answer` evaluation questions.
+- Add baseline-vs-current eval run comparison for regression reports.
 - Add search filters such as `includeDocumentIds`, `excludeDocumentIds`, and `sourceTypes`.
 - Add document-scoped search for debugging and controlled retrieval experiments.
 - Design metadata-aware embedding text carefully before adding it.
@@ -274,7 +356,6 @@ Future search capabilities:
 Later:
 
 - Add proposition-based chunking.
-- Add golden-dataset evaluation workflows.
 - Add run comparison reports.
 - Add caching where it improves a measured bottleneck.
 - Move large ingestion work to an async queue flow.

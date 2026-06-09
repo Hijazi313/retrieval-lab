@@ -10,6 +10,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
+    "eval:retrieval": "ts-node -r tsconfig-paths/register src/modules/evaluation/scripts/run-evaluation.ts",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
