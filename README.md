@@ -2,6 +2,8 @@
 
 Retrieval Lab is a learning-focused backend for comparing retrieval strategies used in Retrieval-Augmented Generation (RAG) systems.
 
+The repository is now organized as a small monorepo. The NestJS backend lives in `apps/api`, and the eventual Next.js frontend will live alongside it in `apps/web`.
+
 The project is intentionally not a chatbot. It focuses on the retrieval layer: document ingestion, chunking, embeddings, vector search, keyword search, hybrid retrieval, run tracking, and usefulness scoring.
 
 ## Goals
@@ -29,23 +31,22 @@ The project is intentionally not a chatbot. It focuses on the retrieval layer: d
 - Drizzle ORM
 - OpenAI embeddings
 - OpenAI Responses API for critic scoring
-- BullMQ and Redis registration for future async ingestion work
+- Redis infrastructure reserved for future async ingestion work
 
 ## Architecture
 
-The app is organized around small module boundaries:
+The API app is organized around small module boundaries:
 
-- `src/modules/documents`: document ingestion and document deletion.
-- `src/modules/chunking`: text normalization and chunking strategy selection.
-- `src/modules/embeddings`: OpenAI embedding generation and vector persistence.
-- `src/modules/retrieval`: vector, full-text, and hybrid search.
-- `src/modules/critic`: LLM-based usefulness judgment for retrieved chunks.
-- `src/modules/evaluation`: golden evaluation questions for repeatable retrieval checks.
-- `src/modules/runs`: placeholder for future retrieval run comparison.
-- `src/database`: Drizzle database connection and schema definitions.
-- `src/openai`: OpenAI client provider.
-- `src/queue`: BullMQ/Redis queue registration.
-- `src/config`: environment validation.
+- `apps/api/src/modules/documents`: document ingestion and document deletion.
+- `apps/api/src/modules/chunking`: text normalization and chunking strategy selection.
+- `apps/api/src/modules/embeddings`: OpenAI embedding generation and vector persistence.
+- `apps/api/src/modules/retrieval`: vector, full-text, and hybrid search.
+- `apps/api/src/modules/critic`: LLM-based usefulness judgment for retrieved chunks.
+- `apps/api/src/modules/evaluation`: golden evaluation questions for repeatable retrieval checks.
+- `apps/api/src/modules/runs`: placeholder for future retrieval run comparison.
+- `apps/api/src/database`: Drizzle database connection and schema definitions.
+- `apps/api/src/openai`: OpenAI client provider.
+- `apps/api/src/config`: environment validation.
 
 The main design principle is to keep retrieval, criticism, and evaluation separate:
 
@@ -79,32 +80,40 @@ pnpm install
 Copy environment variables:
 
 ```bash
-cp .env.example .env
+cp apps/api/.env.example apps/api/.env
 ```
 
 Start local infrastructure:
 
 ```bash
-pnpm infra:up
+pnpm --dir apps/api infra:up
 ```
 
 Run migrations:
 
 ```bash
-pnpm db:migrate
+pnpm --dir apps/api db:migrate
 ```
 
 Run the API:
 
 ```bash
-pnpm start:dev
+pnpm dev:api
 ```
 
 The API uses the `/api` global prefix.
 
+Run the frontend:
+
+```bash
+pnpm dev:web
+```
+
+The Next.js app runs on `http://localhost:3001` and proxies ingestion requests to the API using the server-only `INTERNAL_API_URL`.
+
 ## Environment Variables
 
-See `.env.example` for defaults.
+See `apps/api/.env.example` for API defaults and `apps/web/.env.example` for frontend defaults.
 
 Required for database access:
 
@@ -295,7 +304,7 @@ After at least one question has curated expected chunks, run an evaluation:
 For CI or local regression checks, use:
 
 ```bash
-pnpm eval:retrieval --strategy hybrid --topK 5 --minRecall 0.7 --minMrr 0.6
+pnpm --dir apps/api eval:retrieval --strategy hybrid --topK 5 --minRecall 0.7 --minMrr 0.6
 ```
 
 The script runs the same evaluation service used by the API, prints a compact report, and exits with code `1` when configured thresholds are not met.

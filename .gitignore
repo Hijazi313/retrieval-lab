@@ -1,6 +1,8 @@
 # compiled output
 /dist
+/apps/*/dist
 /node_modules
+/apps/*/node_modules
 /build
 
 # Logs
@@ -17,6 +19,7 @@ lerna-debug.log*
 
 # Tests
 /coverage
+/apps/*/coverage
 /.nyc_output
 
 # IDEs and editors
@@ -37,6 +40,9 @@ lerna-debug.log*
 
 # dotenv environment variable files
 .env
+.env.*
+apps/*/.env
+apps/*/.env.*
 .env.development.local
 .env.test.local
 .env.production.local

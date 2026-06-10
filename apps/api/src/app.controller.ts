@@ -9,4 +9,15 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
+
+  /**
+   * Reports process readiness for local orchestration and frontend proxies.
+   */
+  @Get('health')
+  getHealth() {
+    return {
+      status: 'ok',
+      service: 'retrieval-lab-api',
+    };
+  }
 }

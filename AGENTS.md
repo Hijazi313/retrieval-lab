@@ -23,16 +23,15 @@ Project-specific guidance for agents working in `retrieval-lab`.
 
 ## Current Module Boundaries
 
-- `src/modules/documents`: document ingestion and deletion.
-- `src/modules/chunking`: text normalization and chunking strategies.
-- `src/modules/embeddings`: embedding generation and vector persistence.
-- `src/modules/retrieval`: vector, keyword, and hybrid retrieval.
-- `src/modules/critic`: LLM-based usefulness scoring.
-- `src/modules/evaluation`: future evaluation orchestration.
-- `src/modules/runs`: future retrieval run comparison.
-- `src/database`: Drizzle schema and database connection.
-- `src/openai`: OpenAI client provider.
-- `src/queue`: queue registration for future async ingestion.
+- `apps/api/src/modules/documents`: document ingestion and deletion.
+- `apps/api/src/modules/chunking`: text normalization and chunking strategies.
+- `apps/api/src/modules/embeddings`: embedding generation and vector persistence.
+- `apps/api/src/modules/retrieval`: vector, keyword, and hybrid retrieval.
+- `apps/api/src/modules/critic`: LLM-based usefulness scoring.
+- `apps/api/src/modules/evaluation`: future evaluation orchestration.
+- `apps/api/src/modules/runs`: future retrieval run comparison.
+- `apps/api/src/database`: Drizzle schema and database connection.
+- `apps/api/src/openai`: OpenAI client provider.
 
 ## Coding Preferences
 

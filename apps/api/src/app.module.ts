@@ -13,7 +13,6 @@ import { EvaluationModule } from './modules/evaluation/evaluation.module';
 import { RetrievalModule } from './modules/retrieval/retrieval.module';
 import { RunsModule } from './modules/runs/runs.module';
 import { OpenAiModule } from './openai/openai.module';
-import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -22,7 +21,6 @@ import { QueueModule } from './queue/queue.module';
       validate: validateEnv,
     }),
     DatabaseModule,
-    QueueModule,
     OpenAiModule,
     DocumentsModule,
     ChunkingModule,
