@@ -258,8 +258,8 @@ pnpm --filter @retrieval-lab/web build
   polling, cancellation, retry, or duplicate detection.
 - Successful results exist only in current client state. Refreshing the page
   clears them.
-- The interface does not yet list, inspect, search, or delete persisted
-  documents.
+- The Documents page now lists, searches, paginates, and deletes persisted
+  documents. Full source and chunk-level inspection remain future work.
 - No retrieval, critic, run comparison, or evaluation frontend has been built.
 
 ## Next Logical Frontend Steps
@@ -267,18 +267,16 @@ pnpm --filter @retrieval-lab/web build
 The next work should extend the lab workflow without moving backend
 responsibilities into Next.js:
 
-1. Add a document list and document detail view so an ingestion result remains
-   inspectable after a refresh.
-2. Add document deletion through another thin Route Handler using the existing
-   Nest endpoint.
-3. Introduce an OpenAPI-generated client or shared generated contract as more
+1. Add document detail only when full source, metadata, or chunk-level
+   inspection becomes part of a concrete workflow.
+2. Introduce an OpenAPI-generated client or shared generated contract as more
    endpoints are consumed, reducing handwritten request and response drift.
-4. Build a retrieval workbench for vector, keyword, and hybrid searches,
+3. Build a retrieval workbench for vector, keyword, and hybrid searches,
    including tunable parameters and visible run provenance.
-5. Add retrieval result inspection before adding critic and evaluation views.
-6. Add critic scoring as a separate workflow, then evaluation run comparison
+4. Add retrieval result inspection before adding critic and evaluation views.
+5. Add critic scoring as a separate workflow, then evaluation run comparison
    and reporting.
-7. Revisit asynchronous ingestion only when file size or latency makes the
+6. Revisit asynchronous ingestion only when file size or latency makes the
    synchronous contract insufficient; at that point the UI should use explicit
    job status and progress rather than extending the current timeout.
 

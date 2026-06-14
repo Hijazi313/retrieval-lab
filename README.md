@@ -139,6 +139,7 @@ Infrastructure configuration:
 
 Document ingestion:
 
+- `GET /api/documents`
 - `POST /api/documents/ingest`
 - `DELETE /api/documents/:id`
 

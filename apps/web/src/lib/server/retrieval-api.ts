@@ -22,10 +22,10 @@ export function retrievalApiUrl(path: string) {
 }
 
 export async function retrievalApiFetch(
-  path: string,
+  path: string | URL,
   init?: RequestInit,
 ): Promise<Response> {
-  const url = retrievalApiUrl(path);
+  const url = path instanceof URL ? path : retrievalApiUrl(path);
 
   try {
     return await fetch(url, {
@@ -33,6 +33,13 @@ export async function retrievalApiFetch(
       cache: "no-store",
     });
   } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.name === "AbortError" || error.name === "TimeoutError")
+    ) {
+      throw error;
+    }
+
     throw new RetrievalApiUnavailableError(
       `Could not connect to the Retrieval Lab API at ${url.origin}.`,
       error,

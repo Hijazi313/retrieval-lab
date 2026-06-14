@@ -22,6 +22,8 @@ import {
   useState,
 } from "react";
 
+import { AppShell } from "@/components/app-shell";
+
 import {
   ingestionSchema,
   type IngestionErrorResponse,
@@ -189,46 +191,7 @@ export function IngestionWorkbench() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-lockup">
-          <div className="brand-mark" aria-hidden="true">
-            RL
-          </div>
-          <div>
-            <strong>Retrieval Lab</strong>
-            <span>Experiment workspace</span>
-          </div>
-        </div>
-
-        <nav aria-label="Primary navigation" className="nav-list">
-          <a className="nav-item nav-item-active" href="#ingestion">
-            <Upload size={18} />
-            Ingestion
-          </a>
-          <span className="nav-item nav-item-muted">
-            <Database size={18} />
-            Documents
-          </span>
-          <span className="nav-item nav-item-muted">
-            <Sparkles size={18} />
-            Retrieval
-          </span>
-          <span className="nav-item nav-item-muted">
-            <Layers3 size={18} />
-            Evaluation
-          </span>
-        </nav>
-
-        <div className="sidebar-status">
-          <span className="status-dot" />
-          <div>
-            <strong>Local workspace</strong>
-            <span>API via server proxy</span>
-          </div>
-        </div>
-      </aside>
-
+    <AppShell activeSection="ingestion">
       <main className="workspace" id="ingestion">
         <header className="workspace-header">
           <div>
@@ -607,6 +570,6 @@ export function IngestionWorkbench() {
           )}
         </section>
       </main>
-    </div>
+    </AppShell>
   );
 }
