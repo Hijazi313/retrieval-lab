@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const upstreamUrl = retrievalApiUrl("/api/documents");
 
-  for (const key of ["search", "page", "limit"]) {
+  for (const key of ["search", "page", "pageSize", "sourceType", "sort"]) {
     const value = requestUrl.searchParams.get(key);
     if (value) upstreamUrl.searchParams.set(key, value);
   }

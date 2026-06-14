@@ -54,7 +54,7 @@ export function DocumentsWorkspace() {
 
     const params = new URLSearchParams({
       page: String(page),
-      limit: String(PAGE_SIZE),
+      pageSize: String(PAGE_SIZE),
     });
     if (search) params.set("search", search);
 
@@ -123,7 +123,7 @@ export function DocumentsWorkspace() {
         return;
       }
 
-      const remainingOnPage = (documents?.items.length ?? 1) - 1;
+      const remainingOnPage = (documents?.data.length ?? 1) - 1;
       setPendingDelete(null);
 
       if (remainingOnPage === 0 && page > 1) {
@@ -138,8 +138,9 @@ export function DocumentsWorkspace() {
     }
   }
 
-  const total = documents?.pagination.total ?? 0;
-  const hasDocuments = Boolean(documents?.items.length);
+  const pagination = documents?.meta.pagination;
+  const total = pagination?.totalItems ?? 0;
+  const hasDocuments = Boolean(documents?.data.length);
   const noSearchMatches = !isLoading && !hasDocuments && Boolean(search);
 
   return (
@@ -236,7 +237,7 @@ export function DocumentsWorkspace() {
                     </tr>
                   </thead>
                   <tbody>
-                    {documents?.items.map((document) => (
+                    {documents?.data.map((document) => (
                       <tr key={document.id}>
                         <td className="document-main-cell">
                           <div className="document-file-icon">
@@ -288,14 +289,13 @@ export function DocumentsWorkspace() {
 
               <div className="pagination-bar">
                 <span>
-                  Page {documents?.pagination.page} of{" "}
-                  {documents?.pagination.totalPages}
+                  Page {pagination?.page} of {pagination?.totalPages}
                 </span>
                 <div>
                   <button
                     aria-label="Previous page"
                     className="icon-button"
-                    disabled={page <= 1}
+                    disabled={!pagination?.hasPreviousPage}
                     onClick={() => setPage((current) => current - 1)}
                     type="button"
                   >
@@ -304,9 +304,7 @@ export function DocumentsWorkspace() {
                   <button
                     aria-label="Next page"
                     className="icon-button"
-                    disabled={
-                      page >= (documents?.pagination.totalPages ?? 1)
-                    }
+                    disabled={!pagination?.hasNextPage}
                     onClick={() => setPage((current) => current + 1)}
                     type="button"
                   >

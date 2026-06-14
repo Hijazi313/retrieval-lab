@@ -3,6 +3,8 @@
  */
 export interface ListDocumentsDto {
   search?: string;
+  sourceType?: string;
+  sort?: string;
   page?: string;
-  limit?: string;
+  pageSize?: string;
 }

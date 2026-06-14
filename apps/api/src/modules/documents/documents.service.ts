@@ -4,20 +4,36 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { count, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  or,
+  sql,
+} from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 
+import type { PaginationMeta } from '../../common/http/api-response';
 import { DATABASE } from '../../common/constants/injection-tokens';
 import type { Database } from '../../database/database.types';
 import { chunks, documents } from '../../database/schema';
 import { ChunkingService } from '../chunking/chunking.service';
 import { createDeterministicChunkId } from '../chunking/chunk-id.util';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
+import type { DocumentSummary, ListDocumentsResult } from './documents.contract';
 import { IngestDocumentDto } from './dto/ingest-document.dto';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 
 const DEFAULT_CHUNKING_STRATEGY = 'recursive';
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
+const DOCUMENT_SORT_FIELDS = {
+  createdAt: documents.createdAt,
+  title: documents.title,
+} as const;
 
 /**
  * Owns document persistence and delegates text preparation to the chunking module.
@@ -33,28 +49,39 @@ export class DocumentsService {
   /**
    * Lists document summaries without transferring full source content.
    */
-  async listDocuments(dto: ListDocumentsDto) {
+  async listDocuments(dto: ListDocumentsDto): Promise<ListDocumentsResult> {
     const page = this.parsePositiveInteger(dto.page, 'page', 1);
-    const limit = this.parsePositiveInteger(
-      dto.limit,
-      'limit',
+    const pageSize = this.parsePositiveInteger(
+      dto.pageSize,
+      'pageSize',
       DEFAULT_PAGE_SIZE,
     );
 
-    if (limit > MAX_PAGE_SIZE) {
+    if (pageSize > MAX_PAGE_SIZE) {
       throw new BadRequestException(
-        `limit cannot be greater than ${MAX_PAGE_SIZE}.`,
+        `pageSize cannot be greater than ${MAX_PAGE_SIZE}.`,
       );
     }
 
     const search = dto.search?.trim();
-    const where = search
-      ? or(
-          ilike(documents.title, `%${search}%`),
-          ilike(documents.content, `%${search}%`),
-        )
-      : undefined;
-    const offset = (page - 1) * limit;
+    const sourceType = dto.sourceType?.trim();
+    const filters: SQL[] = [
+      search
+        ? or(
+            ilike(documents.title, `%${search}%`),
+            ilike(documents.content, `%${search}%`),
+          )
+        : undefined,
+      sourceType ? eq(documents.sourceType, sourceType) : undefined,
+    ].filter((value) => value !== undefined);
+    const where =
+      filters.length === 0
+        ? undefined
+        : filters.length === 1
+          ? filters[0]
+          : and(...filters);
+    const offset = (page - 1) * pageSize;
+    const orderBy = this.parseSort(dto.sort);
 
     const [items, totalRows] = await Promise.all([
       this.db
@@ -70,8 +97,8 @@ export class DocumentsService {
         .leftJoin(chunks, eq(chunks.documentId, documents.id))
         .where(where)
         .groupBy(documents.id)
-        .orderBy(desc(documents.createdAt), desc(documents.id))
-        .limit(limit)
+        .orderBy(...orderBy, desc(documents.id))
+        .limit(pageSize)
         .offset(offset),
       this.db
         .select({ total: count() })
@@ -79,19 +106,23 @@ export class DocumentsService {
         .where(where),
     ]);
 
-    const total = Number(totalRows[0]?.total ?? 0);
+    const totalItems = Number(totalRows[0]?.total ?? 0);
+    const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / pageSize);
+    const pagination: PaginationMeta = {
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1 && totalPages > 0,
+    };
 
     return {
-      items: items.map((item) => ({
+      items: items.map<DocumentSummary>((item) => ({
         ...item,
         chunkCount: Number(item.chunkCount),
       })),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / limit)),
-      },
+      pagination,
     };
   }
 
@@ -197,8 +228,6 @@ export class DocumentsService {
     if (deletedDocuments.length === 0) {
       throw new NotFoundException(`Document not found: ${documentId}`);
     }
-
-    return { deleted: true, id: deletedDocuments[0].id };
   }
 
   /**
@@ -261,5 +290,32 @@ export class DocumentsService {
     }
 
     return parsed;
+  }
+
+  /**
+   * Parses a shared sort query format such as "-createdAt,title".
+   */
+  private parseSort(sort: string | undefined) {
+    if (!sort?.trim()) {
+      return [desc(documents.createdAt)];
+    }
+
+    return sort
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((value) => {
+        const direction = value.startsWith('-') ? 'desc' : 'asc';
+        const fieldName = value.replace(/^-/, '') as keyof typeof DOCUMENT_SORT_FIELDS;
+        const field = DOCUMENT_SORT_FIELDS[fieldName];
+
+        if (!field) {
+          throw new BadRequestException(
+            `Unsupported sort field: ${fieldName}.`,
+          );
+        }
+
+        return direction === 'desc' ? desc(field) : asc(field);
+      });
   }
 }

@@ -9,6 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 
+import { apiResponse } from '../../common/http/api-response';
 import { IngestDocumentDto } from './dto/ingest-document.dto';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 import { DocumentsService } from './documents.service';
@@ -24,16 +25,20 @@ export class DocumentsController {
    * Returns a bounded document inventory for inspection and deletion workflows.
    */
   @Get()
-  list(@Query() query: ListDocumentsDto) {
-    return this.documentsService.listDocuments(query);
+  async list(@Query() query: ListDocumentsDto) {
+    const result = await this.documentsService.listDocuments(query);
+
+    return apiResponse(result.items, {
+      pagination: result.pagination,
+    });
   }
 
   /**
    * Accepts raw document content and returns persisted document/chunk metadata.
    */
   @Post('ingest')
-  ingest(@Body() dto: IngestDocumentDto) {
-    return this.documentsService.ingest(dto);
+  async ingest(@Body() dto: IngestDocumentDto) {
+    return apiResponse(await this.documentsService.ingest(dto));
   }
 
   /**
@@ -41,7 +46,7 @@ export class DocumentsController {
    */
   @Delete(':id')
   @HttpCode(204)
-  delete(@Param('id') id: string) {
-    return this.documentsService.deleteDocument(id);
+  async delete(@Param('id') id: string) {
+    await this.documentsService.deleteDocument(id);
   }
 }
