@@ -13,6 +13,7 @@ interface ProblemDetailsBody {
   status: number;
   detail: string;
   instance: string;
+  code?: string;
   errors?: string[] | Record<string, unknown>;
 }
 
@@ -48,21 +49,24 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
 
     const exceptionResponse = exception.getResponse();
-    const title = this.httpStatusTitle(status);
     const details = this.extractDetails(exceptionResponse);
 
     return {
-      type: this.problemType(this.problemSlug(status)),
-      title,
+      type: details.type ?? this.problemType(this.problemSlug(status)),
+      title: details.title ?? this.httpStatusTitle(status),
       status,
       detail: details.detail,
       instance: request.url,
+      ...(details.code === undefined ? {} : { code: details.code }),
       ...(details.errors === undefined ? {} : { errors: details.errors }),
     };
   }
 
   private extractDetails(response: string | object): {
     detail: string;
+    title?: string;
+    type?: string;
+    code?: string;
     errors?: string[] | Record<string, unknown>;
   } {
     if (typeof response === 'string') {
@@ -70,6 +74,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
 
     const body = response as {
+      title?: string;
+      type?: string;
+      code?: string;
       message?: string | string[];
       error?: string;
       detail?: string;
@@ -79,6 +86,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     if (body.detail) {
       return {
         detail: body.detail,
+        ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.type === undefined ? {} : { type: body.type }),
+        ...(body.code === undefined ? {} : { code: body.code }),
         ...(body.errors === undefined ? {} : { errors: body.errors }),
       };
     }
@@ -86,6 +96,9 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     if (Array.isArray(body.message)) {
       return {
         detail: body.message.join(' '),
+        ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.type === undefined ? {} : { type: body.type }),
+        ...(body.code === undefined ? {} : { code: body.code }),
         errors: body.message,
       };
     }
@@ -93,12 +106,20 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     if (typeof body.message === 'string') {
       return {
         detail: body.message,
+        ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.type === undefined ? {} : { type: body.type }),
+        ...(body.code === undefined ? {} : { code: body.code }),
         ...(body.errors === undefined ? {} : { errors: body.errors }),
       };
     }
 
     if (typeof body.error === 'string') {
-      return { detail: body.error };
+      return {
+        detail: body.error,
+        ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.type === undefined ? {} : { type: body.type }),
+        ...(body.code === undefined ? {} : { code: body.code }),
+      };
     }
 
     return { detail: 'The request could not be processed.' };
@@ -140,4 +161,3 @@ export class ProblemDetailsFilter implements ExceptionFilter {
     }
   }
 }
-

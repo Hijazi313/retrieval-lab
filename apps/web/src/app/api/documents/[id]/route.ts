@@ -24,7 +24,13 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     const body = await response.json().catch(() => null);
     return NextResponse.json(
-      body ?? { message: "The document could not be deleted." },
+      body ?? {
+        type: "https://retrieval-lab.dev/problems/http-error",
+        title: "Request Failed",
+        status: response.status,
+        detail: "The document could not be deleted.",
+        instance: `/api/documents/${encodeURIComponent(id)}`,
+      },
       { status: response.status },
     );
   } catch (error) {
@@ -32,9 +38,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     return NextResponse.json(
       {
-        message: unavailable
+        type: unavailable
+          ? "https://retrieval-lab.dev/problems/service-unavailable"
+          : "https://retrieval-lab.dev/problems/http-error",
+        title: unavailable ? "Service Unavailable" : "Request Failed",
+        status: unavailable ? 503 : 500,
+        detail: unavailable
           ? 'The Retrieval Lab API is unavailable. Start both apps with "pnpm dev".'
           : "The delete proxy encountered an unexpected error.",
+        instance: `/api/documents/${encodeURIComponent(id)}`,
       },
       { status: unavailable ? 503 : 500 },
     );

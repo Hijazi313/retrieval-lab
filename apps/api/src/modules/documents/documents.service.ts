@@ -1,39 +1,30 @@
 import {
   BadRequestException,
-  Inject,
   Injectable,
-  NotFoundException,
 } from '@nestjs/common';
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  ilike,
-  or,
-  sql,
-} from 'drizzle-orm';
-import type { SQL } from 'drizzle-orm';
+import { asc, desc } from 'drizzle-orm';
 
-import type { PaginationMeta } from '../../common/http/api-response';
-import { DATABASE } from '../../common/constants/injection-tokens';
-import type { Database } from '../../database/database.types';
-import { chunks, documents } from '../../database/schema';
+import {
+  buildPaginationMeta,
+  parsePagination,
+} from '../../common/query/pagination';
+import { parseAllowlistedSort } from '../../common/query/sort';
 import { ChunkingService } from '../chunking/chunking.service';
 import { createDeterministicChunkId } from '../chunking/chunk-id.util';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
+import { DocumentNotFoundError } from './documents.errors';
 import type { DocumentSummary, ListDocumentsResult } from './documents.contract';
+import { DocumentsMapper } from './documents.mapper';
+import {
+  DOCUMENT_SORT_FIELDS,
+  DocumentsRepository,
+} from './documents.repository';
 import { IngestDocumentDto } from './dto/ingest-document.dto';
 import { ListDocumentsDto } from './dto/list-documents.dto';
 
 const DEFAULT_CHUNKING_STRATEGY = 'recursive';
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 50;
-const DOCUMENT_SORT_FIELDS = {
-  createdAt: documents.createdAt,
-  title: documents.title,
-} as const;
 
 /**
  * Owns document persistence and delegates text preparation to the chunking module.
@@ -41,7 +32,7 @@ const DOCUMENT_SORT_FIELDS = {
 @Injectable()
 export class DocumentsService {
   constructor(
-    @Inject(DATABASE) private readonly db: Database,
+    private readonly documentsRepository: DocumentsRepository,
     private readonly chunkingService: ChunkingService,
     private readonly embeddingsService: EmbeddingsService,
   ) {}
@@ -50,79 +41,28 @@ export class DocumentsService {
    * Lists document summaries without transferring full source content.
    */
   async listDocuments(dto: ListDocumentsDto): Promise<ListDocumentsResult> {
-    const page = this.parsePositiveInteger(dto.page, 'page', 1);
-    const pageSize = this.parsePositiveInteger(
-      dto.pageSize,
-      'pageSize',
-      DEFAULT_PAGE_SIZE,
-    );
-
-    if (pageSize > MAX_PAGE_SIZE) {
-      throw new BadRequestException(
-        `pageSize cannot be greater than ${MAX_PAGE_SIZE}.`,
-      );
-    }
-
-    const search = dto.search?.trim();
-    const sourceType = dto.sourceType?.trim();
-    const filters: SQL[] = [
-      search
-        ? or(
-            ilike(documents.title, `%${search}%`),
-            ilike(documents.content, `%${search}%`),
-          )
-        : undefined,
-      sourceType ? eq(documents.sourceType, sourceType) : undefined,
-    ].filter((value) => value !== undefined);
-    const where =
-      filters.length === 0
-        ? undefined
-        : filters.length === 1
-          ? filters[0]
-          : and(...filters);
-    const offset = (page - 1) * pageSize;
-    const orderBy = this.parseSort(dto.sort);
-
-    const [items, totalRows] = await Promise.all([
-      this.db
-        .select({
-          id: documents.id,
-          title: documents.title,
-          sourceType: documents.sourceType,
-          contentPreview: sql<string>`left(regexp_replace(${documents.content}, '\s+', ' ', 'g'), 220)`,
-          createdAt: documents.createdAt,
-          chunkCount: count(chunks.id),
-        })
-        .from(documents)
-        .leftJoin(chunks, eq(chunks.documentId, documents.id))
-        .where(where)
-        .groupBy(documents.id)
-        .orderBy(...orderBy, desc(documents.id))
-        .limit(pageSize)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(documents)
-        .where(where),
-    ]);
-
-    const totalItems = Number(totalRows[0]?.total ?? 0);
-    const totalPages = totalItems === 0 ? 0 : Math.ceil(totalItems / pageSize);
-    const pagination: PaginationMeta = {
-      page,
-      pageSize,
-      totalItems,
-      totalPages,
-      hasNextPage: page < totalPages,
-      hasPreviousPage: page > 1 && totalPages > 0,
-    };
+    const paginationParams = parsePagination(dto, {
+      defaultPageSize: DEFAULT_PAGE_SIZE,
+      maxPageSize: MAX_PAGE_SIZE,
+    });
+    const where = this.documentsRepository.buildListWhere(dto);
+    const orderBy = parseAllowlistedSort(dto.sort, DOCUMENT_SORT_FIELDS, {
+      defaultSort: [desc(DOCUMENT_SORT_FIELDS.createdAt)],
+      spec: {
+        asc,
+        desc,
+      },
+    });
+    const result = await this.documentsRepository.listSummaries({
+      where,
+      orderBy,
+      pageSize: paginationParams.pageSize,
+      offset: paginationParams.offset,
+    });
 
     return {
-      items: items.map<DocumentSummary>((item) => ({
-        ...item,
-        chunkCount: Number(item.chunkCount),
-      })),
-      pagination,
+      items: result.items.map<DocumentSummary>(DocumentsMapper.toSummary),
+      pagination: buildPaginationMeta(paginationParams, result.totalItems),
     };
   }
 
@@ -144,21 +84,13 @@ export class DocumentsService {
       },
     });
 
-    return this.db.transaction(async (tx) => {
-      const [document] = await tx
-        .insert(documents)
-        .values({
-          title: dto.title.trim(),
-          sourceType: dto.sourceType.trim(),
-          content: normalizedContent,
-          metadata: dto.metadata ?? {},
-        })
-        .returning({
-          id: documents.id,
-          title: documents.title,
-          sourceType: documents.sourceType,
-          createdAt: documents.createdAt,
-        });
+    return this.documentsRepository.withTransaction(async (tx) => {
+      const document = await this.documentsRepository.createDocument(tx, {
+        title: dto.title.trim(),
+        sourceType: dto.sourceType.trim(),
+        content: normalizedContent,
+        metadata: dto.metadata ?? {},
+      });
 
       const chunkValues = chunkResults.map((chunk) => ({
         id: createDeterministicChunkId({
@@ -179,14 +111,10 @@ export class DocumentsService {
         },
       }));
 
-      const insertedChunks =
-        chunkValues.length === 0
-          ? []
-          : await tx.insert(chunks).values(chunkValues).returning({
-              id: chunks.id,
-              chunkIndex: chunks.chunkIndex,
-              tokenCount: chunks.tokenCount,
-            });
+      const insertedChunks = await this.documentsRepository.createChunks(
+        tx,
+        chunkValues,
+      );
 
       const embeddedChunks =
         chunkValues.length === 0
@@ -220,13 +148,11 @@ export class DocumentsService {
   async deleteDocument(documentId: string) {
     this.validateDocumentId(documentId);
 
-    const deletedDocuments = await this.db
-      .delete(documents)
-      .where(eq(documents.id, documentId))
-      .returning({ id: documents.id });
+    const deletedDocuments =
+      await this.documentsRepository.deleteDocumentById(documentId);
 
     if (deletedDocuments.length === 0) {
-      throw new NotFoundException(`Document not found: ${documentId}`);
+      throw new DocumentNotFoundError(documentId);
     }
   }
 
@@ -269,53 +195,5 @@ export class DocumentsService {
     if (!documentId?.trim()) {
       throw new BadRequestException('document id is required.');
     }
-  }
-
-  /**
-   * Normalizes simple query-string pagination values at the service boundary.
-   */
-  private parsePositiveInteger(
-    value: string | undefined,
-    field: string,
-    fallback: number,
-  ) {
-    if (value === undefined) {
-      return fallback;
-    }
-
-    const parsed = Number(value);
-
-    if (!Number.isInteger(parsed) || parsed <= 0) {
-      throw new BadRequestException(`${field} must be a positive integer.`);
-    }
-
-    return parsed;
-  }
-
-  /**
-   * Parses a shared sort query format such as "-createdAt,title".
-   */
-  private parseSort(sort: string | undefined) {
-    if (!sort?.trim()) {
-      return [desc(documents.createdAt)];
-    }
-
-    return sort
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .map((value) => {
-        const direction = value.startsWith('-') ? 'desc' : 'asc';
-        const fieldName = value.replace(/^-/, '') as keyof typeof DOCUMENT_SORT_FIELDS;
-        const field = DOCUMENT_SORT_FIELDS[fieldName];
-
-        if (!field) {
-          throw new BadRequestException(
-            `Unsupported sort field: ${fieldName}.`,
-          );
-        }
-
-        return direction === 'desc' ? desc(field) : asc(field);
-      });
   }
 }

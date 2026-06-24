@@ -28,6 +28,7 @@ import {
   ingestionSchema,
   type IngestionErrorResponse,
   type IngestionInput,
+  type IngestionPayload,
   type IngestionResult,
 } from "./ingestion-contract";
 
@@ -45,18 +46,39 @@ const defaultValues = {
 };
 
 function readApiMessage(body: IngestionErrorResponse | null) {
-  if (!body?.message) {
+  if (!body) {
     return "The document could not be ingested. Please try again.";
   }
 
-  return Array.isArray(body.message) ? body.message.join(" ") : body.message;
+  if (body.message) {
+    return Array.isArray(body.message) ? body.message.join(" ") : body.message;
+  }
+
+  if (body.detail) return body.detail;
+  if (body.title) return body.title;
+
+  if (Array.isArray(body.errors) && body.errors.length > 0) {
+    return body.errors.join(" ");
+  }
+
+  if (body.errors && typeof body.errors === "object") {
+    const values = Object.values(body.errors).flatMap((value) =>
+      Array.isArray(value) ? value : [String(value)],
+    );
+
+    if (values.length > 0) {
+      return values.join(" ");
+    }
+  }
+
+  return "The document could not be ingested. Please try again.";
 }
 
 export function IngestionWorkbench() {
   const [values, setValues] = useState(defaultValues);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [requestError, setRequestError] = useState<string | null>(null);
-  const [result, setResult] = useState<IngestionResult | null>(null);
+  const [result, setResult] = useState<IngestionPayload | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
   const [showChunks, setShowChunks] = useState(false);
@@ -169,7 +191,7 @@ export function IngestionWorkbench() {
       }
 
       startTransition(() => {
-        setResult(body as IngestionResult);
+        setResult((body as IngestionResult).data);
         setShowChunks(false);
       });
     } catch {

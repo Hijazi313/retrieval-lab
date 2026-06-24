@@ -37,7 +37,7 @@ export const ingestionSchema = z
 
 export type IngestionInput = z.infer<typeof ingestionSchema>;
 
-export type IngestionResult = {
+export type IngestionPayload = {
   document: {
     id: string;
     title: string;
@@ -59,8 +59,15 @@ export type IngestionResult = {
   }>;
 };
 
+export type IngestionResult = {
+  data: IngestionPayload;
+  meta?: Record<string, unknown>;
+};
+
 export type IngestionErrorResponse = {
   message?: string | string[];
-  error?: string;
-  statusCode?: number;
+  detail?: string;
+  title?: string;
+  code?: string;
+  errors?: string[] | Record<string, unknown>;
 };
